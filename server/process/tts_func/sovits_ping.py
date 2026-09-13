@@ -27,21 +27,22 @@ def sovits_gen(in_text, output_wav_pth = "output.wav"):
     }
 
     try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()  # throws if not 200
-
-        print(response)
-
-        # Save the response audio if it's binary
-        with open(output_wav_pth, "wb") as f:
-            f.write(response.content)
-        # print("Audio saved as output.wav")
-
-        return output_wav_pth
-
-    except Exception as e:
-        print("Error in sovits_gen:", e)
+        response = requests.post(url, json=payload, timeout=120)
+        response.raise_for_status()
+    except requests.ConnectionError:
+        print(f"GPT-SoVITS is not reachable at {url}. Voice output skipped.")
         return None
+    except requests.RequestException as exc:
+        print(f"GPT-SoVITS could not generate audio: {exc}. Voice output skipped.")
+        return None
+
+    if not response.content:
+        print("GPT-SoVITS returned empty audio. Voice output skipped.")
+        return None
+
+    with open(output_wav_pth, "wb") as f:
+        f.write(response.content)
+    return output_wav_pth
 
 
 
@@ -56,5 +57,4 @@ if __name__ == "__main__":
 
     print(f"Elapsed time: {elapsed_time:.4f} seconds")
     print(path_to_aud)
-
 

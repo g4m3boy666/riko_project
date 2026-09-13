@@ -17,6 +17,11 @@ if PROVIDER not in {"openai", "gemini"}:
     raise ValueError("provider must be 'openai' or 'gemini' in character_config.yaml")
 
 MODEL = char_config["model"]
+FALLBACK_MODELS = char_config.get("fallback_models", [])
+if not isinstance(FALLBACK_MODELS, list) or not all(
+    isinstance(model, str) and model for model in FALLBACK_MODELS
+):
+    raise ValueError("fallback_models must be a list of model names in character_config.yaml")
 SYSTEM_PROMPT_TEXT = char_config["presets"]["default"]["system_prompt"]
 SYSTEM_PROMPT = [
     {
@@ -69,32 +74,45 @@ def _message_text(message):
 
 
 def _gemini_response(messages):
-    from google.genai import types
+    from google.genai import errors, types
 
-    contents = [
-        types.Content.model_validate_json(json.dumps(message["gemini_content"]))
-        if message.get("gemini_content")
-        else types.Content(
-            role="model" if message["role"] == "assistant" else "user",
-            parts=[types.Part.from_text(text=_message_text(message))],
-        )
-        for message in messages
-        if message["role"] in {"user", "assistant"}
-    ]
-    response = _gemini_client().models.generate_content(
-        model=MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT_TEXT,
-            temperature=1,
-            max_output_tokens=2048,
-        ),
-    )
-    if not response.text:
-        raise RuntimeError("Gemini returned no text; the conversation history was not saved.")
-    # Keep the complete model turn so Gemini thought signatures survive restarts.
-    model_content = response.candidates[0].content.to_json_dict()
-    return response.text, model_content
+    models = list(dict.fromkeys([MODEL, *FALLBACK_MODELS]))
+    for index, model in enumerate(models):
+        contents = [
+            types.Content.model_validate_json(json.dumps(message["gemini_content"]))
+            if message.get("gemini_content") and message.get("gemini_model") == model
+            else types.Content(
+                role="model" if message["role"] == "assistant" else "user",
+                parts=[types.Part.from_text(text=_message_text(message))],
+            )
+            for message in messages
+            if message["role"] in {"user", "assistant"}
+        ]
+        try:
+            response = _gemini_client().models.generate_content(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT_TEXT,
+                    temperature=1,
+                    max_output_tokens=2048,
+                ),
+            )
+        except errors.ServerError as exc:
+            if exc.code != 503:
+                raise
+            if index == len(models) - 1:
+                raise RuntimeError(
+                    f"Gemini models unavailable (503): {', '.join(models)}. Try again later."
+                ) from exc
+            print(f"Gemini model {model} unavailable (503); trying {models[index + 1]}.")
+            continue
+
+        if not response.text:
+            raise RuntimeError("Gemini returned no text; the conversation history was not saved.")
+        # Keep the complete model turn so Gemini thought signatures survive restarts.
+        model_content = response.candidates[0].content.to_json_dict()
+        return response.text, model_content, model
 
 
 def _openai_response(messages):
@@ -115,13 +133,14 @@ def llm_response(user_input):
     messages.append({"role": "user", "content": [{"type": "input_text", "text": user_input}]})
 
     if PROVIDER == "gemini":
-        answer, model_content = _gemini_response(messages)
+        answer, model_content, model_used = _gemini_response(messages)
     else:
-        answer, model_content = _openai_response(messages), None
+        answer, model_content, model_used = _openai_response(messages), None, None
 
     assistant_message = {"role": "assistant", "content": [{"type": "output_text", "text": answer}]}
     if model_content is not None:
         assistant_message["gemini_content"] = model_content
+        assistant_message["gemini_model"] = model_used
     messages.append(assistant_message)
     save_history(messages)
     return answer

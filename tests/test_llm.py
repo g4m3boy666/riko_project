@@ -22,10 +22,22 @@ class GeminiResponseTests(unittest.TestCase):
         self.addCleanup(provider_patch.stop)
 
         self.request = None
+        self.requests = []
         self.response_text = "Bonjour senpai"
+        self.fail_models = set()
+        self.failure_code = 503
+
+        class FakeServerError(Exception):
+            def __init__(self, code):
+                self.code = code
+
+        self.server_error = FakeServerError
 
         def generate_content(**kwargs):
             self.request = kwargs
+            self.requests.append(kwargs)
+            if kwargs["model"] in self.fail_models:
+                raise FakeServerError(self.failure_code)
             model_content = types.SimpleNamespace(
                 to_json_dict=lambda: {
                     "role": "model",
@@ -59,6 +71,7 @@ class GeminiResponseTests(unittest.TestCase):
         google_module.__path__ = []
         genai_module = types.ModuleType("google.genai")
         genai_module.types = genai_types
+        genai_module.errors = types.SimpleNamespace(ServerError=FakeServerError)
         google_module.genai = genai_module
         modules_patch = patch.dict(sys.modules, {"google": google_module, "google.genai": genai_module})
         modules_patch.start()
@@ -85,6 +98,7 @@ class GeminiResponseTests(unittest.TestCase):
         self.assertEqual(saved[:3], old_history)
         self.assertEqual(saved[-1]["content"][0]["text"], answer)
         self.assertEqual(saved[-1]["gemini_content"]["parts"][0]["thought_signature"], "c2ln")
+        self.assertEqual(saved[-1]["gemini_model"], llm_scr.MODEL)
 
     def test_gemini_replays_full_saved_model_content(self):
         saved_model_content = {
@@ -97,6 +111,7 @@ class GeminiResponseTests(unittest.TestCase):
                 "role": "assistant",
                 "content": [{"type": "output_text", "text": "Bonjour"}],
                 "gemini_content": saved_model_content,
+                "gemini_model": llm_scr.MODEL,
             },
         ]
         self.history_file.write_text(json.dumps(history), encoding="utf-8")
@@ -104,6 +119,53 @@ class GeminiResponseTests(unittest.TestCase):
         llm_scr.llm_response("Encore ?")
 
         self.assertEqual(self.request["contents"][1].parts, saved_model_content["parts"])
+
+    def test_503_uses_fallback_and_saves_only_successful_model(self):
+        history = [
+            {"role": "user", "content": [{"type": "input_text", "text": "Salut"}]},
+            {
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "Bonjour"}],
+                "gemini_content": {
+                    "role": "model",
+                    "parts": [{"text": "Bonjour", "thought_signature": "c2ln"}],
+                },
+                "gemini_model": llm_scr.MODEL,
+            },
+        ]
+        self.history_file.write_text(json.dumps(history), encoding="utf-8")
+        self.fail_models.add(llm_scr.MODEL)
+
+        with patch.object(llm_scr, "FALLBACK_MODELS", ["gemini-3.5-flash-lite"]):
+            answer = llm_scr.llm_response("Comment ça va ?")
+
+        self.assertEqual(answer, "Bonjour senpai")
+        self.assertEqual([request["model"] for request in self.requests],
+                         [llm_scr.MODEL, "gemini-3.5-flash-lite"])
+        self.assertEqual(self.requests[1]["contents"][1].parts, ["Bonjour"])
+        saved = json.loads(self.history_file.read_text(encoding="utf-8"))
+        self.assertEqual(saved[-1]["gemini_model"], "gemini-3.5-flash-lite")
+
+    def test_non_503_error_does_not_try_fallback(self):
+        self.fail_models.add(llm_scr.MODEL)
+        self.failure_code = 500
+
+        with patch.object(llm_scr, "FALLBACK_MODELS", ["gemini-3.5-flash-lite"]):
+            with self.assertRaises(self.server_error):
+                llm_scr.llm_response("Salut")
+
+        self.assertEqual([request["model"] for request in self.requests], [llm_scr.MODEL])
+        self.assertFalse(self.history_file.exists())
+
+    def test_all_models_unavailable_does_not_save_history(self):
+        self.fail_models.update([llm_scr.MODEL, "gemini-3.5-flash-lite"])
+
+        with patch.object(llm_scr, "FALLBACK_MODELS", ["gemini-3.5-flash-lite"]):
+            with self.assertRaisesRegex(RuntimeError, "models unavailable \(503\)"):
+                llm_scr.llm_response("Salut")
+
+        self.assertEqual(len(self.requests), 2)
+        self.assertFalse(self.history_file.exists())
 
     def test_openai_ignores_gemini_metadata(self):
         history = [

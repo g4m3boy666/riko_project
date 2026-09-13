@@ -20,6 +20,7 @@ Prompts and model settings are stored in `character_config.yaml`. Gemini is the 
 provider: gemini
 history_file: chat_history.json
 model: "gemini-3.8-flash"
+fallback_models: ["gemini-3.5-flash-lite"]
 presets:
   default:
     system_prompt: |
@@ -36,6 +37,8 @@ sovits_ping_config:
 ```
 
 You can define personalities by modifying the config file. Set `ref_audio_path` to a path accessible to your GPT-SoVITS server.
+
+If Gemini returns `503 UNAVAILABLE` after its automatic retries, Riko tries each model in `fallback_models` in order. Only a successful reply is saved to chat history. Set `fallback_models: []` to disable this behavior.
 
 Create a Gemini API key in [Google AI Studio](https://aistudio.google.com/app/apikey), then set it in the environment before starting Riko:
 
@@ -69,14 +72,23 @@ On Windows PowerShell, activate the environment with `.venv\Scripts\Activate.ps1
 
 ## 🧪 Usage
 
-### 1. Launch the GPT-SoVITS API 
+### 1. Launch the GPT-SoVITS API
+
+If GPT-SoVITS is not installed, follow its [official Linux installation instructions](https://github.com/RVC-Boss/GPT-SoVITS?tab=readme-ov-file#linux) first. In a separate terminal, start its API from the GPT-SoVITS directory after configuring its models and weights:
+
+```bash
+python api_v2.py -a 127.0.0.1 -p 9880 -c GPT_SoVITS/configs/tts_infer.yaml
+```
+
+Riko calls its `/tts` endpoint. If the API is unavailable, Riko prints the reply and continues without voice playback.
 
 ### 2. Run the main script:
 
-
 ```bash
-python server/main_chat.py
+.venv/bin/python server/main_chat.py
 ```
+
+Run this from the project root. On Windows PowerShell, use `.venv\Scripts\python.exe server/main_chat.py`. If the virtual environment is activated, `python server/main_chat.py` also works.
 
 The flow:
 
