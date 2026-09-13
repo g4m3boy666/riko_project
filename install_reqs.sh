@@ -1,11 +1,13 @@
-### CHECK NVIDIA VERSION WITH NVIDIA-SMI I HAVE 12.7 BUT IF YOU HAVE 12.8 UV pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu12
+#!/usr/bin/env bash
+set -euo pipefail
 
-pip install uv
-pip install torch==2.6.0 torchaudio --index-url https://download.pytorch.org/whl/cu126
-uv pip install -r extra-req.txt --no-deps
-uv pip install -r requirements.txt
+# Check your NVIDIA/CUDA version before using this CUDA 12.6 PyTorch index.
+uv venv --python 3.10
 
-python - <<PYCODE
+uv pip install --python .venv/bin/python torch==2.6.0 torchaudio --index-url https://download.pytorch.org/whl/cu126
+uv pip install --python .venv/bin/python -r extra-req.txt -r requirements.txt
+
+.venv/bin/python - <<'PYCODE'
 import nltk
 for pkg in ["averaged_perceptron_tagger", "cmudict"]:
     nltk.download(pkg)
