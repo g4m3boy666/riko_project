@@ -2,6 +2,7 @@
 
 import json
 import os
+import tempfile
 from functools import lru_cache
 from pathlib import Path
 
@@ -41,8 +42,25 @@ def load_history():
 
 
 def save_history(history):
-    with HISTORY_FILE.open("w", encoding="utf-8") as history_file:
-        json.dump(history, history_file, indent=2, ensure_ascii=False)
+    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=HISTORY_FILE.parent,
+            prefix=f".{HISTORY_FILE.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as history_file:
+            temp_path = Path(history_file.name)
+            json.dump(history, history_file, indent=2, ensure_ascii=False)
+            history_file.flush()
+            os.fsync(history_file.fileno())
+        os.replace(temp_path, HISTORY_FILE)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
 
 @lru_cache(maxsize=1)

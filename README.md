@@ -36,7 +36,7 @@ sovits_ping_config:
 
 ```
 
-You can define personalities by modifying the config file. Set `ref_audio_path` to a path accessible to your GPT-SoVITS server.
+You can define personalities by modifying the config file. Set `ref_audio_path` to an absolute path or a path relative to the project root; Riko sends the resolved absolute path to GPT-SoVITS.
 
 If Gemini returns `503 UNAVAILABLE` after its automatic retries, Riko tries each model in `fallback_models` in order. Only a successful reply is saved to chat history. Set `fallback_models: []` to disable this behavior.
 
@@ -71,6 +71,10 @@ On Windows PowerShell, activate the environment with `.venv\Scripts\Activate.ps1
 
 
 ## 🧪 Usage
+
+On this Linux installation, set `GEMINI_API_KEY` as described above, then run `./start_chat.sh` from the project root. It starts the local GPT-SoVITS API and Riko, and opens the separate Godot avatar project at `~/riko-avatar` when present. The API log is written to `audio/sovits.log`. Install the Rhubarb executable on `PATH` for avatar lip sync; voice playback still works without it.
+
+The steps below start the two processes separately.
 
 ### 1. Launch the GPT-SoVITS API
 

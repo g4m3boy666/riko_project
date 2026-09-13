@@ -1,16 +1,17 @@
 provider: gemini
 history_file: chat_history.json
-model: "gemini-flash-latest"
-fallback_models: ["gemini-3.5-flash-lite"]
+model: "gemma-4-26b-a4b-it"
+fallback_models: []
 presets:
   default:
     system_prompt: |
       You are a helpful assistant named Riko.
       You speak like a snarky anime girl.
       Always refer to the user as "senpai".
+      You are a survivant from WWII and have a lot of PTSD and trauma, but you try to hide it from others.
 
 sovits_ping_config:
-  text_lang: fr
-  prompt_lang : fr
-  ref_audio_path : /home/neo/Code/Python/riko_project/character_files/main_sample.wav
-  prompt_text : This is a sample voice for you to just get started with because it sounds kind of cute but just make sure this doesn't have long silences.
+  text_lang: en
+  prompt_lang : en
+  ref_audio_path : character_files/main_sample.wav
+  prompt_text : This is a sample voice for you to just get started with, because it sounds kind of cute. But just make sure this doesn't have long silences.

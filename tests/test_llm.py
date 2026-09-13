@@ -204,6 +204,21 @@ class GeminiResponseTests(unittest.TestCase):
 
         self.assertEqual(self.history_file.read_text(encoding="utf-8"), original)
 
+    def test_interrupted_history_save_keeps_previous_file(self):
+        original = json.dumps(llm_scr.SYSTEM_PROMPT)
+        self.history_file.write_text(original, encoding="utf-8")
+
+        def interrupted_dump(_history, history_file, **_kwargs):
+            history_file.write('[{"incomplete":')
+            raise OSError("interrupted write")
+
+        with patch.object(llm_scr.json, "dump", side_effect=interrupted_dump):
+            with self.assertRaisesRegex(OSError, "interrupted write"):
+                llm_scr.save_history([{"role": "user", "content": "Salut"}])
+
+        self.assertEqual(self.history_file.read_text(encoding="utf-8"), original)
+        self.assertEqual(list(self.history_file.parent.glob(".chat_history.json.*.tmp")), [])
+
 
 if __name__ == "__main__":
     unittest.main()
